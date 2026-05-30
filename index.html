@@ -361,7 +361,54 @@
         observer.observe(el);
       });
 
+      // ブログ最新記事の動的取得（同一オリジン WordPress REST API）
+      // 取得失敗時（CORS違反・サーバーエラー等）はベタ書きフォールバックを保持
+      loadLatestPosts();
     });
+
+    async function loadLatestPosts() {
+      const container = document.getElementById('posts-container');
+      if (!container) return;
+
+      try {
+        const res = await fetch('/wp-json/wp/v2/posts?per_page=3&_fields=link,title', {
+          headers: { Accept: 'application/json' }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        // WordPress側のPHP Warning混入対策:
+        // テキストとして読み、最初の `[` または `{` 以降をJSONとしてパース
+        const raw = await res.text();
+        const jsonStart = raw.search(/[\[\{]/);
+        if (jsonStart === -1) throw new Error('No JSON in response');
+        const posts = JSON.parse(raw.slice(jsonStart));
+        if (!Array.isArray(posts) || posts.length === 0) throw new Error('Empty posts');
+
+        container.innerHTML = '';
+        posts.forEach(post => {
+          const a = document.createElement('a');
+          a.href = post.link;
+          a.className = 'blog-post';
+
+          const inner = document.createElement('div');
+          inner.className = 'blog-post-content';
+
+          const h3 = document.createElement('h3');
+          h3.className = 'blog-post-title';
+
+          // タイトルのHTMLエンティティをデコードしてtextContentで安全に挿入
+          const tmp = document.createElement('div');
+          tmp.innerHTML = post.title.rendered;
+          h3.textContent = tmp.textContent;
+
+          inner.appendChild(h3);
+          a.appendChild(inner);
+          container.appendChild(a);
+        });
+      } catch (err) {
+        console.warn('[blog] フォールバック表示:', err.message);
+      }
+    }
   </script>
 
 </body>
